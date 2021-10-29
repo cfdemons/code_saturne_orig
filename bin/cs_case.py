@@ -35,6 +35,9 @@ import platform
 import sys
 import stat
 
+# To copy LUMA executable to run directory
+import shutil
+
 from code_saturne import cs_exec_environment, cs_run_conf
 
 from code_saturne.cs_case_domain import *
@@ -199,7 +202,8 @@ class case:
                  staging_dir = None,
                  domains = None,
                  syr_domains = None,
-                 py_domains = None):
+                 py_domains = None,
+                 luma_domains = None):
 
         # Package specific information
 
@@ -250,15 +254,24 @@ class case:
             self.py_domains = py_domains
         else:
             self.py_domains = [py_domains]
+			
+        if luma_domains == None:
+            self.luma_domains = []
+        elif type(luma_domains) == tuple:
+            self.luma_domains = list(luma_domains)
+        elif type(luma_domains) == list:
+            self.luma_domains = luma_domains
+        else:
+            self.luma_domains = [luma_domains]
 
         # Check names in case of multiple domains (coupled by MPI)
 
-        n_domains = len(self.domains) + len(self.syr_domains) + len(self.py_domains)
+        n_domains = len(self.domains) + len(self.syr_domains) + len(self.py_domains) + len(self.luma_domains)
 
         if n_domains > 1:
             err_str = 'In case of multiple domains (i.e. code coupling), ' \
                 + 'each domain must have a name.\n'
-            for d in (self.domains + self.syr_domains + self.py_domains):
+            for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
                 if d.name == None:
                     raise RunCaseError(err_str)
 
@@ -282,6 +295,8 @@ class case:
                 self.syr_domains[0].name = None
             elif len(self.py_domains) == 1:
                 self.py_domains[0].name = None
+            elif len(self.luma_domains) == 1:
+                self.luma_domains[0].name = None			
 
         else:
             # Coupling or single domain run from coupling script
@@ -293,7 +308,7 @@ class case:
 
         n_nc_solver = 0
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.set_case_dir(self.case_dir, staging_dir)
             try:
                 solver_name = os.path.basename(d.solver_path)
@@ -315,14 +330,14 @@ class case:
 
         n_exec_solver = 0
         for d in ( self.domains + self.syr_domains \
-                 + self.py_domains):
+                 + self.py_domains + self.luma_domains):
             if d.exec_solver:
                 n_exec_solver += 1
 
         if n_exec_solver == 0:
             self.exec_solver = False
         elif n_exec_solver <   len(self.domains) + len(self.syr_domains) \
-                             + len(self.py_domains):
+                             + len(self.py_domains) + len(self.luma_domains):
             err_str = 'In case of multiple domains (i.e. code coupling), ' \
                 + 'all or no domains must execute their solver.\n'
             raise RunCaseError(err_str)
@@ -412,6 +427,19 @@ class case:
                 msg = ' Python script domain ' + d.name + ' on ' \
                     + str(d.n_procs) + ' processes.\n'
                 sys.stdout(msg)
+				
+        if len(self.luma_domains) == 1:
+            if self.luma_domains[0].n_procs > 1:
+                msg = ' Parallel LUMA script on ' \
+                    + str(self.luma_domains[0].n_procs) + ' processes.\n'
+            else:
+                msg = ' Single processor LUMA simulation.\n'
+            sys.stdout.write(msg)
+        else:
+            for d in self.luma_domains:
+                msg = ' LUMA domain ' + d.name + ' on ' \
+                    + str(d.n_procs) + ' processes.\n'
+                sys.stdout(msg)
 
         sys.stdout.write('\n')
 
@@ -428,7 +456,7 @@ class case:
 
         np_list = []
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             np_list.append(d.get_n_procs())
 
         n_procs_tot = 0
@@ -528,7 +556,7 @@ class case:
 
         app_id = 0
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.set_n_procs(np_list[app_id][0])
             app_id += 1
 
@@ -591,7 +619,7 @@ class case:
 
         # Set execution directory
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.set_exec_dir(self.exec_dir)
 
     #---------------------------------------------------------------------------
@@ -608,7 +636,7 @@ class case:
 
         # Coupled case
         if len(self.domains) + len(self.syr_domains) \
-         + len(self.py_domains) > 1:
+         + len(self.py_domains) + len(self.luma_domains) > 1:
             r += '_COUPLING'
 
         if not os.path.isdir(r):
@@ -633,7 +661,7 @@ class case:
         else:
             os.mkdir(self.result_dir)
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.set_result_dir(self.run_id, self.result_dir)
 
     #---------------------------------------------------------------------------
@@ -689,7 +717,7 @@ class case:
             s.write('\n')
         s.write(hline)
 
-        if len(self.domains) + len(self.syr_domains) + len(self.py_domains)  > 1:
+        if len(self.domains) + len(self.syr_domains) + len(self.py_domains) + len(self.luma_domains)  > 1:
             s.write('  Exec. dir.     : ' + self.exec_dir + '\n')
             s.write(hline)
 
@@ -700,7 +728,7 @@ class case:
             s.write('    ' + k + '=' + os.environ[k] + '\n')
         s.write(hline)
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.summary_info(s)
             s.write(hline)
 
@@ -830,6 +858,19 @@ class case:
                 + ' -wdir ' + os.path.basename(s_args[0]) \
                 + ' ' + s_args[1] + s_args[2]
             app_id += 1
+			
+        for d in self.luma_domains:
+            # Copy LUMA executable to running directory. TODO: probably this is done at the wrong position, but just see if it works. 
+            luma_dir = os.path.join(d.case_dir, "LUMA")
+            exec_dir = os.path.join(d.exec_dir, "LUMA")
+            shutil.copyfile(luma_dir, exec_dir)
+            s_args = d.solver_command()
+            if len(cmd) > 0:
+                cmd += ' : '
+            cmd += '-n ' + str(d.n_procs) \
+                + ' -wdir ' + os.path.basename(s_args[0]) \
+                + ' ' + s_args[1] + s_args[2]
+            app_id += 1
 
         return cmd
 
@@ -845,7 +886,7 @@ class case:
 
         app_id = 0
 
-        for d in (self.syr_domains + self.domains + self.py_domains):
+        for d in (self.syr_domains + self.domains + self.py_domains + self.luma_domains):
             s_args = d.solver_command()
             cmd = '-n ' + str(d.n_procs) \
                 + ' -wdir ' + os.path.basename(s_args[0]) \
@@ -893,6 +934,19 @@ class case:
 
             cmd  = '%d-%d\t' % (rank_id, rank_id + d.n_procs - 1)
             cmd += '%s %s/%s\t' % (_pypath, _rundir, _pyscript)
+            cmd += s_args[2]
+            cmd += ' -wdir %s' % _rundir
+
+            e.write(cmd)
+            rank_id += d.n_procs
+			
+        for d in self.luma_domains:
+            s_args = d.solver_command()
+            #_pypath, _pyscript = s_args[1].split(" ")
+            _rundir = os.path.basename(s_args[0])
+
+            cmd  = '%d-%d\t' % (rank_id, rank_id + d.n_procs - 1)
+            cmd += '%s\t' % (_rundir)
             cmd += s_args[2]
             cmd += ' -wdir %s' % _rundir
 
@@ -952,6 +1006,16 @@ class case:
             app_id += 1
 
         for d in self.py_domains:
+            nr += d.n_procs
+            e.write(test_pf + str(nr) + test_sf)
+            s_args = d.solver_command()
+            e.write('  cd ' + s_args[0] + '\n')
+            e.write('  ' + s_args[1] + s_args[2] + ' $@\n')
+            if app_id == 0:
+                test_pf = 'el' + test_pf
+            app_id += 1
+			
+        for d in self.luma_domains:
             nr += d.n_procs
             e.write(test_pf + str(nr) + test_sf)
             s_args = d.solver_command()
@@ -1020,7 +1084,7 @@ class case:
         # Case with only one cs_solver instance possibly under MPI
 
         if len(self.domains) == 1 and len(self.syr_domains) == 0 \
-           and len(self.py_domains) == 0:
+           and len(self.py_domains) == 0 and len(self.luma_domains) == 0:
 
             s_args = self.domains[0].solver_command()
 
@@ -1089,7 +1153,7 @@ class case:
 
         if n_procs == None:
             n_procs = 0
-            for d in (self.syr_domains + self.py_domains):
+            for d in (self.syr_domains + self.py_domains + self.luma_domains):
                 n_procs += d.n_procs
 
         # Set PATH for Windows DLL search PATH
@@ -1222,6 +1286,16 @@ class case:
             if rcfile:
                 s.write('  source ' + rcfile + '\n')
             s.write('fi\n\n')
+
+        # Handle OpenMP if needed
+
+        n_threads = exec_env.resources.n_threads
+        if self.package_compute.config.features['openmp'] == 'yes' or n_threads:
+            if not n_threads:
+                n_threads = 1
+            cs_exec_environment.write_export_env(s, 'OMP_NUM_THREADS',
+                                                 str(n_threads))
+            s.write('\n')
 
         # Boot MPI daemons if necessary
 
@@ -1514,6 +1588,10 @@ class case:
 
         for d in self.py_domains:
             d.solver_path = self.package.config.python
+            d.init_staged_data
+			
+        for d in self.luma_domains:
+            d.solver_path = os.path.join('.', 'LUMA')
             d.init_staged_data()
 
     #---------------------------------------------------------------------------
@@ -1547,7 +1625,7 @@ class case:
 
         n_procs_default = None
         if len(self.domains) == 1 and len(self.syr_domains) == 0 \
-           and len(self.py_domains) == 0:
+           and len(self.py_domains) == 0 and len(self.luma_domains) == 0:
             d = self.domains[0]
             if hasattr(d, 'case_n_procs'):
                 n_procs_default = int(d.case_n_procs)
@@ -1566,7 +1644,7 @@ class case:
         # Transfer parameters MPI parameters from user scripts here.
 
         if len(self.domains) == 1 and len(self.syr_domains) == 0 \
-           and len(self.py_domains) == 0:
+           and len(self.py_domains) == 0 and len(self.luma_domains) == 0:
             d = self.domains[0]
             if d.user_locals:
                 m = 'define_mpi_environment'
@@ -1592,7 +1670,7 @@ class case:
 
         self.summary_init(exec_env)
 
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.preprocess()
             if len(d.error) > 0:
                 self.error = d.error
@@ -1696,6 +1774,12 @@ class case:
                     'Either ' + name + ' or Python script may have failed.\n\n' \
                     'Check ' + name + ' log (listing) and Python log (python.log)\n' \
                     'for details, as well as error* files.\n\n'
+            elif len(self.luma_domains) > 0:
+                err_str = \
+                    'Error running the coupled calculation.\n\n' \
+                    'Either ' + name + ' or LUMA may have failed.\n\n' \
+                    'Check ' + name + ' log (listing) and LUMA log (luma.log)\n' \
+                    'for details, as well as error* files.\n\n'
             else:
                 err_str = \
                     'Error running the calculation.\n\n' \
@@ -1704,7 +1788,7 @@ class case:
 
             # Update error status for domains
 
-            for d in (self.domains + self.syr_domains + self.py_domains):
+            for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
                 d.error = self.error
 
         # Indicate status using temporary file for SALOME.
@@ -1740,7 +1824,7 @@ class case:
         self.summary_finalize()
         self.copy_log('summary')
 
-        n_domains = len(self.domains) + len(self.syr_domains) + len(self.py_domains)
+        n_domains = len(self.domains) + len(self.syr_domains) + len(self.py_domains) + len(self.luma_domains)
         if n_domains > 1 and self.error == '':
             dir_files = os.listdir(self.exec_dir)
             for f in [self.package.runsolver,
@@ -1752,7 +1836,7 @@ class case:
                         pass
 
         e_caption = None
-        for d in (self.domains + self.syr_domains + self.py_domains):
+        for d in (self.domains + self.syr_domains + self.py_domains + self.luma_domains):
             d.copy_results()
             if d.error:
                 e_caption = d.error
@@ -2022,7 +2106,7 @@ class case:
         r = os.path.join(base_dir, 'RESU')
 
         if len(self.domains) + len(self.syr_domains) \
-         + len(self.py_domains) > 1:
+         + len(self.py_domains) + len(self.luma_domains) > 1:
             r += '_COUPLING'
         elif len(self.domains) == 1 and not (run_id_prefix or run_id_suffix):
             try:

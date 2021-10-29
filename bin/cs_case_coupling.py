@@ -54,6 +54,7 @@ def coupling(package,
     use_neptune = False
     use_cathare = False
     use_py_code = False
+    use_luma = False
 
     # Use alternate compute (back-end) package if defined
 
@@ -69,6 +70,7 @@ def coupling(package,
     nep_domains = []
     cat_domains = []
     py_domains = []
+    luma_domains = []
 
     if domains == None:
         raise RunCaseError('No domains defined.')
@@ -232,6 +234,30 @@ def coupling(package,
 
             use_py_code = True
             py_domains.append(dom)
+			
+        elif solver_s == 'luma':
+
+            script_s = d.get('script')
+            if (script_s == None):
+                msg = 'Check your coupling definition.\n'
+                msg += 'LUMA executable is missing for domain: '
+                msg += domain_s + '.\n'
+                raise RunCaseError(msg)
+
+            # Code_Saturne/LUMA coupling
+
+            try:
+                dom = luma_domain(package, name = domain_s, cmd_line = d.get('command_line'), \
+				      script_name = script_s, n_procs_weight = d.get('n_procs_weight'))
+
+            except Exception:
+                err_str = 'Cannot create LUMA code domain.\n'
+                err_str += ' domain = ' + domain_s + '\n'
+                err_str += ' script = ' + str(d.get('script')) + '\n'
+                raise RunCaseError(err_str)
+
+            use_luma = True
+            luma_domains.append(dom)
 
         else:
             err_str = 'Unknown code type : ' + d.get('solver') + '.\n'
@@ -246,7 +272,8 @@ def coupling(package,
              staging_dir = staging_dir,
              domains = sat_domains + nep_domains + cat_domains,
              syr_domains = syr_domains,
-             py_domains = py_domains)
+             py_domains = py_domains,
+			 luma_domains = luma_domains)
 
     if verbose:
         msg = ' Coupling execution between: \n'
@@ -260,6 +287,8 @@ def coupling(package,
             msg += '   o CATHARE2     [' + str(len(cat_domains)) + ' domain(s)];\n'
         if use_py_code == True:
             msg += '   o Python Script  [' + str(len(py_domains)) + ' domain(s)];\n'
+        if use_luma == True:
+            msg += '   o LUMA executable  [' + str(len(luma_domains)) + ' domain(s)];\n'
         sys.stdout.write(msg+'\n')
 
     return c
