@@ -2034,6 +2034,8 @@ class python_domain(base_domain):
         args += ' --log ' + enquote_arg(self.logfile)
 
         return wd, exec_path, args
+		
+#-------------------------------------------------------------------------------
 
 # Coupling with LUMA code
 
@@ -2041,6 +2043,7 @@ class luma_domain(base_domain):
 
     #---------------------------------------------------------------------------
 
+    def __init__(self,
                  package,
                  cmd_line = None,
                  name = None,
@@ -2048,6 +2051,29 @@ class luma_domain(base_domain):
                  log_file = None,
                  n_procs_weight = None,
                  n_procs_min = 1,
+                 n_procs_max = None,
+                 n_threads = 1):
+
+        base_domain.__init__(self,
+                             package,
+                             name,
+                             n_procs_weight,
+                             n_procs_min,
+                             n_procs_max)
+
+        self.cmd_line = cmd_line
+        self.logfile  = log_file
+        if self.logfile == None:
+            self.logfile = 'luma.log'
+
+        self.data_file = None
+
+        #self.solver_path = self.package.config.python
+        self.exec_solver = True
+        self.nthreads = n_threads
+
+        self.script_name = script_name
+
     #---------------------------------------------------------------------------
 
     def set_case_dir(self, case_dir, staging_dir = None):
